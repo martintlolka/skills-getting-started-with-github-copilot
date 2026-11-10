@@ -9,7 +9,9 @@ from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
 import os
+from copy import deepcopy
 from pathlib import Path
+from threading import Lock
 
 app = FastAPI(title="Mergington High School API",
               description="API for viewing and signing up for extracurricular activities")
@@ -38,8 +40,45 @@ activities = {
         "schedule": "Mondays, Wednesdays, Fridays, 2:00 PM - 3:00 PM",
         "max_participants": 30,
         "participants": ["john@mergington.edu", "olivia@mergington.edu"]
+    },
+    "Basketball Team": {
+        "description": "Practice basketball skills and compete in school games",
+        "schedule": "Mondays and Wednesdays, 3:30 PM - 5:00 PM",
+        "max_participants": 15,
+        "participants": []
+    },
+    "Soccer Club": {
+        "description": "Develop soccer skills and play friendly matches",
+        "schedule": "Tuesdays and Thursdays, 3:30 PM - 5:00 PM",
+        "max_participants": 18,
+        "participants": []
+    },
+    "Art Club": {
+        "description": "Explore drawing, painting, and other visual arts",
+        "schedule": "Wednesdays, 3:30 PM - 5:00 PM",
+        "max_participants": 20,
+        "participants": []
+    },
+    "Drama Club": {
+        "description": "Act, write, and produce school theater performances",
+        "schedule": "Fridays, 3:30 PM - 5:00 PM",
+        "max_participants": 20,
+        "participants": []
+    },
+    "Debate Club": {
+        "description": "Build public speaking skills and debate current topics",
+        "schedule": "Tuesdays, 3:30 PM - 4:30 PM",
+        "max_participants": 16,
+        "participants": []
+    },
+    "Science Club": {
+        "description": "Explore scientific ideas through experiments and projects",
+        "schedule": "Thursdays, 3:30 PM - 4:30 PM",
+        "max_participants": 16,
+        "participants": []
     }
 }
+activities_lock = Lock()
 
 
 @app.get("/")
@@ -49,19 +88,36 @@ def root():
 
 @app.get("/activities")
 def get_activities():
-    return activities
+    with activities_lock:
+        return deepcopy(activities)
 
 
 @app.post("/activities/{activity_name}/signup")
 def signup_for_activity(activity_name: str, email: str):
     """Sign up a student for an activity"""
-    # Validate activity exists
-    if activity_name not in activities:
-        raise HTTPException(status_code=404, detail="Activity not found")
+    with activities_lock:
+        if activity_name not in activities:
+            raise HTTPException(status_code=404, detail="Activity not found")
 
-    # Get the specific activity
-    activity = activities[activity_name]
+        activity = activities[activity_name]
 
-    # Add student
-    activity["participants"].append(email)
+        if email in activity["participants"]:
+            raise HTTPException(status_code=409, detail="Student is already signed up")
+
+        activity["participants"].append(email)
     return {"message": f"Signed up {email} for {activity_name}"}
+
+
+@app.delete("/activities/{activity_name}/signup")
+def unregister_from_activity(activity_name: str, email: str):
+    """Remove a student from an activity"""
+    with activities_lock:
+        if activity_name not in activities:
+            raise HTTPException(status_code=404, detail="Activity not found")
+
+        participants = activities[activity_name]["participants"]
+        if email not in participants:
+            raise HTTPException(status_code=404, detail="Student is not signed up")
+
+        participants.remove(email)
+    return {"message": f"Unregistered {email} from {activity_name}"}
