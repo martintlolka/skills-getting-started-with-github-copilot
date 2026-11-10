@@ -1,4 +1,18 @@
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
+from time import sleep
+
 import pytest
+
+from src import app as app_module
+
+
+class SlowMembershipList(list):
+    def __contains__(self, value):
+        result = super().__contains__(value)
+        # Widen the race window between checking membership and mutating the list.
+        sleep(0.05)
+        return result
 
 
 def test_root_redirects_to_static_page(client):
@@ -138,5 +152,53 @@ def test_student_can_sign_up_again_after_unregistering(client, expected_activiti
     assert unregister_response.json() == expected_unregister
     assert second_signup_response.status_code == 200
     assert second_signup_response.json() == expected_signup
+    assert activities_response.status_code == 200
+    assert activities_response.json() == expected_activities
+
+
+@pytest.mark.parametrize(
+    "method, expected_statuses, expected_detail",
+    [
+        ("POST", [200, 409], "Student is already signed up"),
+        ("DELETE", [200, 404], "Student is not signed up"),
+    ],
+)
+def test_concurrent_requests_change_participant_once(
+    client, expected_activities, method, expected_statuses, expected_detail,
+):
+    activity_name = "Chess Club"
+    email = "new.student@mergington.edu"
+    participants = SlowMembershipList(
+        expected_activities[activity_name]["participants"]
+    )
+    if method == "DELETE":
+        participants.append(email)
+    else:
+        expected_activities[activity_name]["participants"].append(email)
+    app_module.activities[activity_name]["participants"] = participants
+    start = Barrier(2)
+    expected_message = (
+        f"Signed up {email} for {activity_name}" if method == "POST"
+        else f"Unregistered {email} from {activity_name}"
+    )
+
+    def send_request():
+        start.wait(timeout=5)
+        return client.request(
+            method, f"/activities/{activity_name}/signup", params={"email": email}
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [executor.submit(send_request) for _ in range(2)]
+        responses = [future.result(timeout=10) for future in futures]
+    activities_response = client.get("/activities")
+
+    assert sorted(response.status_code for response in responses) == expected_statuses
+    assert [response.json() for response in responses if response.status_code == 200] == [
+        {"message": expected_message}
+    ]
+    assert [
+        response.json() for response in responses if response.status_code != 200
+    ] == [{"detail": expected_detail}]
     assert activities_response.status_code == 200
     assert activities_response.json() == expected_activities

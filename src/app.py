@@ -9,7 +9,9 @@ from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
 import os
+from copy import deepcopy
 from pathlib import Path
+from threading import Lock
 
 app = FastAPI(title="Mergington High School API",
               description="API for viewing and signing up for extracurricular activities")
@@ -76,6 +78,7 @@ activities = {
         "participants": []
     }
 }
+activities_lock = Lock()
 
 
 @app.get("/")
@@ -85,37 +88,36 @@ def root():
 
 @app.get("/activities")
 def get_activities():
-    return activities
+    with activities_lock:
+        return deepcopy(activities)
 
 
 @app.post("/activities/{activity_name}/signup")
 def signup_for_activity(activity_name: str, email: str):
     """Sign up a student for an activity"""
-    # Validate activity exists
-    if activity_name not in activities:
-        raise HTTPException(status_code=404, detail="Activity not found")
+    with activities_lock:
+        if activity_name not in activities:
+            raise HTTPException(status_code=404, detail="Activity not found")
 
-    # Get the specific activity
-    activity = activities[activity_name]
+        activity = activities[activity_name]
 
-    # Prevent a student from signing up more than once
-    if email in activity["participants"]:
-        raise HTTPException(status_code=409, detail="Student is already signed up")
+        if email in activity["participants"]:
+            raise HTTPException(status_code=409, detail="Student is already signed up")
 
-    # Add student
-    activity["participants"].append(email)
+        activity["participants"].append(email)
     return {"message": f"Signed up {email} for {activity_name}"}
 
 
 @app.delete("/activities/{activity_name}/signup")
 def unregister_from_activity(activity_name: str, email: str):
     """Remove a student from an activity"""
-    if activity_name not in activities:
-        raise HTTPException(status_code=404, detail="Activity not found")
+    with activities_lock:
+        if activity_name not in activities:
+            raise HTTPException(status_code=404, detail="Activity not found")
 
-    participants = activities[activity_name]["participants"]
-    if email not in participants:
-        raise HTTPException(status_code=404, detail="Student is not signed up")
+        participants = activities[activity_name]["participants"]
+        if email not in participants:
+            raise HTTPException(status_code=404, detail="Student is not signed up")
 
-    participants.remove(email)
+        participants.remove(email)
     return {"message": f"Unregistered {email} from {activity_name}"}

@@ -39,6 +39,9 @@ unregister return `404` for an unknown activity; unregister also returns `404`
 if the student is not registered. Both require the `email` query parameter
 and return `422` when it is missing.
 
+Concurrent participant changes are synchronized within each application process.
+The activity list refreshes after successful signup and unregister requests.
+
 ## Testing
 
 From the repository root, install the dependencies and run the backend tests:
@@ -73,3 +76,4 @@ The application uses a simple data model with meaningful identifiers:
    - Grade level
 
 All data is stored in memory, which means data will be reset when the server restarts.
+Separate server processes do not share activity data.
