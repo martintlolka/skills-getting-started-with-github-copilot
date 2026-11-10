@@ -41,6 +41,9 @@ and return `422` when it is missing.
 
 Concurrent participant changes are synchronized within each application process.
 The activity list refreshes after successful signup and unregister requests.
+Only the latest refresh updates the page, so delayed responses cannot restore
+removed participants or stale availability counts. Keyboard focus stays near
+the removed participant, falling back to the activity heading when needed.
 
 ## Testing
 
